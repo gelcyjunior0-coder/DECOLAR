@@ -67,19 +67,34 @@ def derive_categories(room_min: dict) -> dict:
 
 
 # --------------------------------------------------------------------------- live
-def build_url(base_url: str, checkin: date, checkout: date) -> str:
+def build_url(base_url: str, checkin: date, checkout: date, adults: int = 1) -> str:
     """
-    Troca as datas na URL da Decolar pelas datas-alvo, sem depender do nome dos parâmetros:
-    substitui a 1ª data AAAA-MM-DD encontrada por checkin e a 2ª por checkout.
+    Monta a URL da Decolar para a data-alvo, LIMPANDO o lixo de sessão.
+    Formato: /accommodations/detail/{ID}/{checkin}/{checkout}/{hospedes}?currency=BRL
+    - troca as duas datas AAAA-MM-DD do caminho;
+    - ajusta o número de hóspedes para `adults`;
+    - remove searchId, selected_room_pack, user_searched_gid, throughResults, etc.
     """
+    from urllib.parse import urlparse, urlunparse
+
+    parts = urlparse(base_url)
+    segs = parts.path.split("/")
+    date_idx = [i for i, s in enumerate(segs) if re.fullmatch(r"\d{4}-\d{2}-\d{2}", s)]
+    if len(date_idx) >= 2:
+        segs[date_idx[0]] = checkin.isoformat()
+        segs[date_idx[1]] = checkout.isoformat()
+        g = date_idx[1] + 1                       # segmento de hóspedes vem após o checkout
+        if g < len(segs) and segs[g].isdigit():
+            segs[g] = str(adults)
+        new_path = "/".join(segs)
+        return urlunparse((parts.scheme, parts.netloc, new_path, "", "currency=BRL", ""))
+
+    # fallback (URL fora do padrão esperado): só troca datas no texto
     dates = re.findall(r"\d{4}-\d{2}-\d{2}", base_url)
     url = base_url
     if len(dates) >= 2:
-        url = url.replace(dates[0], checkin.isoformat(), 1)
-        url = url.replace(dates[1], checkout.isoformat(), 1)
-        return url
-    sep = "&" if "?" in url else "?"
-    return f"{url}{sep}checkInDate={checkin.isoformat()}&checkOutDate={checkout.isoformat()}"
+        url = url.replace(dates[0], checkin.isoformat(), 1).replace(dates[1], checkout.isoformat(), 1)
+    return url
 
 
 def dismiss_cookies(page) -> None:
@@ -112,10 +127,10 @@ _dumped = False
 
 
 def scrape_hotel_date(page, hotel: dict, stay_date: date, run_id: str,
-                      currency: str = "BRL") -> list[dict]:
+                      currency: str = "BRL", adults: int = 1) -> list[dict]:
     global _dumped
     checkin, checkout = stay_date, stay_date + timedelta(days=1)
-    url = build_url(hotel["url"], checkin, checkout)
+    url = build_url(hotel["url"], checkin, checkout, adults)
 
     page.goto(url, timeout=config.PAGE_TIMEOUT_MS, wait_until="domcontentloaded")
     dismiss_cookies(page)
@@ -163,3 +178,4 @@ def scrape_hotel_date(page, hotel: dict, stay_date: date, run_id: str,
     return [obs("cheapest_overall", cats["cheapest_overall"]),
             obs("ocean_view", cats["ocean_view"]),
             obs("suite", cats["suite"])]
+                          
