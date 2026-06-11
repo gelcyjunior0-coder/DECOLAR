@@ -21,3 +21,10 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
           HEADLESS: "true"
         run: python main.py --trigger cron
+      - name: Guardar pagina de diagnostico
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: debug-page
+          path: debug_first_page.html
+          if-no-files-found: ignore
