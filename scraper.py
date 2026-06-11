@@ -108,21 +108,47 @@ def expand_rooms(page) -> None:
             return
 
 
+_dumped = False
+
+
 def scrape_hotel_date(page, hotel: dict, stay_date: date, run_id: str,
                       currency: str = "BRL") -> list[dict]:
+    global _dumped
     checkin, checkout = stay_date, stay_date + timedelta(days=1)
     url = build_url(hotel["url"], checkin, checkout)
 
     page.goto(url, timeout=config.PAGE_TIMEOUT_MS, wait_until="domcontentloaded")
     dismiss_cookies(page)
-    # espera os quartos aparecerem
     try:
         page.wait_for_selector(config.SELECTORS["room_name"], timeout=config.PAGE_TIMEOUT_MS)
     except Exception:
         pass
     expand_rooms(page)
 
-    room_min = parse_rooms(page.content())
+    html = page.content()
+    room_min = parse_rooms(html)
+
+    # Diagnóstico: salva a 1ª página vista e loga por que não achou quartos
+    if not _dumped:
+        _dumped = True
+        try:
+            with open("debug_first_page.html", "w", encoding="utf-8") as f:
+                f.write(html)
+        except Exception:
+            pass
+        title = ""
+        try:
+            title = page.title()
+        except Exception:
+            pass
+        low = html.lower()
+        challenge = [w for w in ("captcha", "robot", "verifique", "acesso negado",
+                                 "denied", "unusual", "blocked") if w in low]
+        print(f"  [diag] url={page.url[:90]}")
+        print(f"  [diag] titulo='{title[:60]}' | tamanho={len(html)} | "
+              f"room-name={html.count('room-name')} | '{config.PRICE_MARKER}'="
+              f"{html.count(config.PRICE_MARKER)} | desafio={challenge or 'nao'}")
+
     cats = derive_categories(room_min)
 
     base = {"hotel_id": hotel["id"], "scrape_run_id": run_id,
